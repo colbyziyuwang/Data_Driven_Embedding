@@ -58,7 +58,7 @@ def read_data(filename):
     else:
         with open(filename, "r") as f:
             text = f.read()
-    return [word.lower() for word in re.compile('\w+').findall(text)]
+    return [word.lower() for word in re.compile(r'\w+').findall(text)]
 
 def build_dataset(words, n_words):
     """Process raw inputs into a dataset.
@@ -180,7 +180,7 @@ def tsne_plot(embeddings, num, reverse_dictionary, filename):
         print('Please install sklearn, matplotlib, and scipy to plot embeddings.')
         print(ex)
         return
-    tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=5000, method='exact')
+    tsne = TSNE(perplexity=30, n_components=2, init='pca', max_iter=5000, method='exact')
     low_dim_embs = tsne.fit_transform(final_embeddings[:num, :])
     low_dim_labels = [reverse_dictionary[i] for i in xrange(num)]
     assert low_dim_embs.shape[0] >= len(low_dim_labels), 'More labels than embeddings'
