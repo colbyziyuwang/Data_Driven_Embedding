@@ -12,7 +12,7 @@ class StateActionPredictionModel(nn.Module):
         context_size (int): Size of the context, i.e., how many state-action pairs are used as input for predicting the missing action.
     """
     
-    def __init__(self, state_dim, n_actions, embedding_size, context_size):
+    def __init__(self, state_dim, n_actions, embedding_size=16, context_size=5):
         super(StateActionPredictionModel, self).__init__()
         
         # Embedding layers for states (continuous) and actions (discrete)

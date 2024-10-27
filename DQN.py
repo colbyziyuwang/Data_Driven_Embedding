@@ -5,6 +5,9 @@ import torch
 import tqdm
 import matplotlib.pyplot as plt
 import warnings
+from embedding_cbow import StateActionPredictionModel
+from load_data import StateActionDataset
+from torch.utils.data import DataLoader
 warnings.filterwarnings("ignore")
 
 # Deep Q Learning
@@ -38,6 +41,7 @@ Q = None
 # Create network for Q(s, a)
 # Create target network
 # Create optimizer
+# Create embedding_cbow model
 def create_everything(seed):
 
     utils.seed.seed(seed)
@@ -57,7 +61,8 @@ def create_everything(seed):
         torch.nn.Linear(HIDDEN, ACT_N)
     ).to(DEVICE)
     OPT = torch.optim.Adam(Q.parameters(), lr = LEARNING_RATE)
-    return env, test_env, buf, Q, Qt, OPT
+    embed_cbow = StateActionPredictionModel(OBS_N, ACT_N)
+    return env, test_env, buf, Q, Qt, OPT, embed_cbow
 
 # Update a target network using a source network
 def update(target, source):
@@ -124,6 +129,39 @@ def update_networks(epi, buf, Q, Qt, OPT):
 
     return loss.item()
 
+def create_batch_data(state_action_sequences):
+    """
+    Processes the input sequence of state-action pairs and creates a DataLoader for training.
+    
+    Args:
+        state_action_sequences (list): A list where each element is a sequence of the form [s1, a1, s2, a2, ..., sn]
+    
+    Returns:
+        DataLoader: A PyTorch DataLoader for training batches.
+    """
+    
+    # Initialize processed list
+    processed_state_action_sequences = [] 
+    
+    # Iterate over each sequence in state_action_sequences
+    for seq in state_action_sequences:
+        # Iterate over the sequence to extract (s1, a1, s2, a2, s3, a3), (s2, a2, s3, a3, s4, a4), and so on
+        for i in range(0, len(seq) - 6, 2):  # Move in steps of 2, stop at len(seq) - 6
+            s1, a1 = seq[i], seq[i+1]
+            s2, a2 = seq[i+2], seq[i+3]
+            s3, a3 = seq[i+4], seq[i+5]
+            
+            # Append the tuple (s1, a1, s2, a2, s3, a3) to the processed list
+            processed_state_action_sequences.append((s1, a1, s2, a2, s3, a3))
+    
+    # Create the dataset using the processed sequences
+    dataset = StateActionDataset(processed_state_action_sequences)
+
+    # Initialize DataLoader
+    data_loader = DataLoader(dataset, batch_size=16, shuffle=True)
+
+    return data_loader
+
 # Play episodes
 # Training function
 def train(seed):
@@ -132,7 +170,8 @@ def train(seed):
     print("Seed=%d" % seed)
 
     # Create environment, buffer, Q, Q target, optimizer
-    env, test_env, buf, Q, Qt, OPT = create_everything(seed)
+    env, test_env, buf, Q, Qt, OPT, embed_cbow = create_everything(seed)
+    state_action_sequences = []
 
     # epsilon greedy exploration
     EPSILON = STARTING_EPSILON
@@ -143,15 +182,19 @@ def train(seed):
     pbar = tqdm.trange(EPISODES)
     for epi in pbar:
 
-        # Play an episode and log episodic reward
-        S, A, R = utils.envs.play_episode_rb(env, policy, buf)
+        # Play an episode and log episodic reward (also collects state-action sequences)
+        S, A, R, s_a_seq = utils.envs.play_episode_rb(env, policy, buf)
+        state_action_sequences.append(s_a_seq)
         
         # Train after collecting sufficient experience
         if epi >= TRAIN_AFTER_EPISODES:
 
             # Train for TRAIN_EPOCHS
-            for tri in range(TRAIN_EPOCHS): 
+            for tri in range(TRAIN_EPOCHS):
+                data_loader = create_batch_data(state_action_sequences)
+                embed_cbow.train(data_loader)
                 update_networks(epi, buf, Q, Qt, OPT)
+            state_action_sequences = []
 
         # Evaluate for TEST_EPISODES number of episodes
         Rews = []

@@ -1,11 +1,16 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+# Check if s is a tuple
+def check_s(s):
+    if (isinstance(s, tuple)):
+        s = s[0]
+    return s
 class StateActionDataset(Dataset):
     def __init__(self, state_action_sequences):
         """
         Dataset class to handle sequences of state-action pairs.
-        Each sequence is of the form [s1, a1, s2, a2, s3, a3].
+        Each sequence is of the form (s1, a1, s2, a2, s3, a3).
         
         Args:
             state_action_sequences: List of sequences, where each sequence is a tuple/list of (s1, a1, s2, a2, s3, a3).
@@ -29,11 +34,11 @@ class StateActionDataset(Dataset):
         Returns:
             Tuple of tensors (s1, a1, s2, s3, a3, a2)
         """
-        s1 = torch.tensor(self.sequences[idx][0], dtype=torch.float32)  # State s1
+        s1 = torch.tensor(check_s(self.sequences[idx][0]), dtype=torch.float32)  # State s1
         a1 = torch.tensor(self.sequences[idx][1], dtype=torch.long)    # Action a1
-        s2 = torch.tensor(self.sequences[idx][2], dtype=torch.float32)  # State s2
+        s2 = torch.tensor(check_s(self.sequences[idx][2]), dtype=torch.float32)  # State s2
         a2 = torch.tensor(self.sequences[idx][3], dtype=torch.long)    # Action a2 (target action to predict)
-        s3 = torch.tensor(self.sequences[idx][4], dtype=torch.float32)  # State s3
+        s3 = torch.tensor(check_s(self.sequences[idx][4]), dtype=torch.float32)  # State s3
         a3 = torch.tensor(self.sequences[idx][5], dtype=torch.long)    # Action a3
         
         return s1, a1, s2, s3, a3, a2  # Return the context and target action
