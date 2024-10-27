@@ -96,7 +96,7 @@ def policy(env, obs):
 
 
 # Update networks
-def update_networks(epi, buf, Q, Qt, OPT):
+def update_networks(epi, buf, Q, Qt, OPT, embed_cbow):
     
     # Sample a minibatch (s, a, r, s', d)
     # Each variable is a vector of corresponding values
@@ -106,7 +106,17 @@ def update_networks(epi, buf, Q, Qt, OPT):
     qvalues = Q(S).gather(1, A.view(-1, 1)).squeeze()
 
     # Get max_a' Qt(s', a') for every (s') in the minibatch
-    q2values = torch.max(Qt(S2), dim = 1).values
+    # q2values = torch.max(Qt(S2), dim = 1).values
+
+    # Get Q(s', a') for every next state s'
+    q2values_all = Qt(S2)  # This gives Q-values for all actions for each state s'
+
+    # Compute action weights using the distances
+    # Assuming compute_distance already returns the weights (softmax applied internally)
+    weights = embed_cbow.compute_distance(S2)  # shape [batch_size, n_actions]
+
+    # Use the computed weights to get the weighted combination of Q-values
+    q2values = torch.sum(weights * q2values_all, dim=1)
 
     # If done, 
     #   y = r(s, a) + GAMMA * max_a' Q(s', a') * (0)
@@ -193,7 +203,7 @@ def train(seed):
             for tri in range(TRAIN_EPOCHS):
                 data_loader = create_batch_data(state_action_sequences)
                 embed_cbow.train(data_loader)
-                update_networks(epi, buf, Q, Qt, OPT)
+                update_networks(epi, buf, Q, Qt, OPT, embed_cbow)
             state_action_sequences = []
 
         # Evaluate for TEST_EPISODES number of episodes

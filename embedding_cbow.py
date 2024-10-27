@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 class StateActionPredictionModel(nn.Module):
     """
@@ -88,3 +89,30 @@ class StateActionPredictionModel(nn.Module):
                 total_loss += loss.item()  # Accumulate the loss for reporting
                 
             # print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss / len(data_loader)}")
+    
+    def compute_distance(self, S):
+        """
+        Compute the embedding distance between a batch of states S and all actions.
+        
+        Args:
+            S (torch.Tensor): The batch of state feature vectors.
+        
+        Returns:
+            torch.Tensor: The distance matrix between states and all actions, with softmax applied.
+        """
+        # Get the embeddings for the input states
+        states_embeddings = self.state_embedding(S)  # Assume S is of shape (batch_size, state_dim)
+        
+        # Generate action indices
+        action_indices = torch.arange(self.n_actions).to(S.device)
+        
+        # Get the embeddings for all actions
+        action_embeddings = self.action_embedding(action_indices)  # Shape (n_actions, embedding_size)
+
+        # Compute the dot product between states and actions (distance matrix)
+        distance = torch.mm(states_embeddings, action_embeddings.T)  # Shape (batch_size, n_actions)
+        
+        # Apply softmax to each row of the distance matrix
+        distance_softmax = torch.nn.functional.softmax(distance, dim=-1)
+        
+        return distance_softmax
