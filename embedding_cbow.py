@@ -16,6 +16,10 @@ class StateActionPredictionModel(nn.Module):
     def __init__(self, state_dim, n_actions, embedding_size=16, context_size=5):
         super(StateActionPredictionModel, self).__init__()
         
+        # State Dimension and Number of Actions
+        self.state_dim = state_dim
+        self.n_actions = n_actions
+        
         # Embedding layers for states (continuous) and actions (discrete)
         self.state_embedding = nn.Linear(state_dim, embedding_size)  # Linear layer for continuous state embeddings
         self.action_embedding = nn.Embedding(n_actions, embedding_size)  # Embedding layer for discrete action embeddings
