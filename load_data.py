@@ -43,25 +43,39 @@ class StateActionDataset(Dataset):
         
         return s1, a1, s2, s3, a3, a2  # Return the context and target action
 
+class SkipGramStateActionDataset(Dataset):
+    def __init__(self, state_action_sequences):
+        """
+        Dataset class to handle sequences of state-action pairs.
+        Each sequence is of the form (a1, s1, a2).
+        
+        Args:
+            state_action_sequences: List of sequences, where each sequence is a tuple/list of (s1, a1, s2, a2, s3, a3).
+        """
+        self.sequences = state_action_sequences  # A list of sequences, each in the format [s1, a1, s2, a2, s3, a3]
 
-# Example Usage
+    def __len__(self):
+        """
+        Return the length of the dataset.
+        """
+        return len(self.sequences)
 
-# # Example state-action sequences (you should replace this with your actual dataset)
-# # Each sequence is of the form [s1, a1, s2, a2, s3, a3]
-# state_action_sequences = [
-#     # Example data
-#     ([0.1, 0.2, 0.3], 1, [0.4, 0.5, 0.6], 2, [0.7, 0.8, 0.9], 3),
-#     ([0.2, 0.3, 0.4], 2, [0.5, 0.6, 0.7], 1, [0.8, 0.9, 1.0], 0),
-#     # Add more sequences as needed
-# ]
+    def __getitem__(self, idx):
+        """
+        Return a single item from the dataset at index `idx`.
+        The item is a tuple of (a1, s2, a2), where a1, a2 are the actions to predict.
 
-# # Initialize dataset
-# dataset = StateActionDataset(state_action_sequences)
-
-# # Initialize DataLoader
-# data_loader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-# # Example usage: Iterate through the DataLoader
-# for batch in data_loader:
-#     s1, a1, s2, s3, a3, target_action = batch
-#     print(f"s1: {s1}, a1: {a1}, s2: {s2}, s3: {s3}, a3: {a3}, target: {target_action}")
+        Args:
+            idx: Index of the sample to return.
+        
+        Returns:
+            Tuple of tensors (a1, s2, a2)
+        """
+        a1 = torch.tensor(self.sequences[idx][0], dtype=torch.long)    # Action a1 (target action to predict)
+        s2 = torch.tensor(check_s(self.sequences[idx][1]), dtype=torch.float32)  # State s1
+        a2 = torch.tensor(self.sequences[idx][2], dtype=torch.long)    # Action a2 (target action to predict)
+        
+        # Now return both actions as a stacked tensor (shape 2, embed_dim)
+        action_tensor = torch.stack([a1, a2])  # Stack a1 and a2
+        
+        return s2, action_tensor # Return the state and context actions

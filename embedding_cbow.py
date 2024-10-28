@@ -11,7 +11,7 @@ class StateActionPredictionModel(nn.Module):
         state_dim (int): Dimensionality of the state input (continuous).
         n_actions (int): Number of possible discrete actions.
         embedding_size (int): Dimensionality of the embeddings for both states and actions.
-        context_size (int): Size of the context, i.e., how many state-action pairs are used as input for predicting the missing action.
+        context_size (int): Size of the context, i.e., how many state, action elements.
     """
     
     def __init__(self, state_dim, n_actions, embedding_size=16, context_size=5):
