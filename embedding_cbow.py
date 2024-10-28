@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import torch.nn.functional as F
 
 class StateActionPredictionModel(nn.Module):
     """
@@ -19,7 +20,7 @@ class StateActionPredictionModel(nn.Module):
         # State Dimension and Number of Actions
         self.state_dim = state_dim
         self.n_actions = n_actions
-        
+
         # Embedding layers for states (continuous) and actions (discrete)
         self.state_embedding = nn.Linear(state_dim, embedding_size)  # Linear layer for continuous state embeddings
         self.action_embedding = nn.Embedding(n_actions, embedding_size)  # Embedding layer for discrete action embeddings
@@ -113,10 +114,10 @@ class StateActionPredictionModel(nn.Module):
         # Get the embeddings for all actions
         action_embeddings = self.action_embedding(action_indices)  # Shape (n_actions, embedding_size)
 
-        # Compute the dot product between states and actions (distance matrix)
-        distance = torch.mm(states_embeddings, action_embeddings.T)  # Shape (batch_size, n_actions)
+        # Compute cosine similarity
+        cosine_similarity = F.cosine_similarity(states_embeddings.unsqueeze(1), action_embeddings.unsqueeze(0), dim=-1)
         
-        # Apply softmax to each row of the distance matrix
-        distance_softmax = torch.nn.functional.softmax(distance, dim=-1)
+        # Apply softmax to get the final distances
+        softmax_distance = torch.softmax(cosine_similarity, dim=-1)
         
-        return distance_softmax
+        return softmax_distance
