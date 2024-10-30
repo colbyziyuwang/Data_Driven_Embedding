@@ -251,9 +251,12 @@ def plot_arrays(vars, color, label):
     plt.plot(range(len(mean)), mean, color=color, label=label)
     plt.fill_between(range(len(mean)), np.maximum(mean-std, 0), np.minimum(mean+std,200), color=color, alpha=0.3)
 
+    # Save the vars array to .npy file
+    np.save("reward_cbow.npy", vars)
+    
 if __name__ == "__main__":
     # Make a flag
-    cbow_flag = False
+    cbow_flag = True
 
     # Train for different seeds
     curves = []
