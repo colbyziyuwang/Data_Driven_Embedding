@@ -33,6 +33,8 @@ STARTING_EPSILON = 1.0  # Starting epsilon
 STEPS_MAX = 10000       # Gradually reduce epsilon over these many steps
 EPSILON_END = 0.01      # At the end, keep epsilon at this value
 
+DQN = True              # True means original DQN, no cbow or skipgram
+
 # Global variables
 EPSILON = STARTING_EPSILON
 Q = None
@@ -111,9 +113,6 @@ def update_networks(epi, buf, Q, Qt, OPT, embed_cbow):
     # Get Q(s, a) for every (s, a) in the minibatch
     qvalues = Q(S).gather(1, A.view(-1, 1)).squeeze()
 
-    # Get max_a' Qt(s', a') for every (s') in the minibatch
-    # q2values = torch.max(Qt(S2), dim = 1).values
-
     # Get Q(s', a') for every next state s'
     q2values_all = Qt(S2)  # This gives Q-values for all actions for each state s'
 
@@ -122,7 +121,11 @@ def update_networks(epi, buf, Q, Qt, OPT, embed_cbow):
     weights = embed_cbow.compute_distance(S2)  # shape [batch_size, n_actions]
 
     # Use the computed weights to get the weighted combination of Q-values
-    q2values = torch.sum(weights * q2values_all, dim=1)
+    if (DQN == False):
+        q2values = torch.sum(weights * q2values_all, dim=1)
+    else:
+        # Get max_a' Qt(s', a') for every (s') in the minibatch
+        q2values = torch.max(Qt(S2), dim = 1).values
 
     # If done, 
     #   y = r(s, a) + GAMMA * max_a' Q(s', a') * (0)
@@ -252,7 +255,7 @@ def plot_arrays(vars, color, label):
     plt.fill_between(range(len(mean)), np.maximum(mean-std, 0), np.minimum(mean+std,200), color=color, alpha=0.3)
 
     # Save the vars array to .npy file
-    np.save("reward_cbow.npy", vars)
+    np.save("reward_dqn.npy", vars)
     
 if __name__ == "__main__":
     # Make a flag
