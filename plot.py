@@ -30,7 +30,7 @@ def plot_curves(reward_cbow, reward_skipgram, reward_dqn):
 
     # Plot DQN curve
     plt.plot(range(len(mean_cbow)), mean_dqn, color='green', label='DQN Reward')
-    plt.fill_between(range(len(mean_dqn)), np.maximum(mean_skipgram - std_skipgram, 0), np.minimum(mean_dqn + std_dqn, 200), color='green', alpha=0.3)
+    plt.fill_between(range(len(mean_dqn)), np.maximum(mean_dqn - std_dqn, 0), np.minimum(mean_dqn + std_dqn, 200), color='green', alpha=0.3)
 
     # Add labels and title
     plt.xlabel("Episodes")  # Label for x-axis
