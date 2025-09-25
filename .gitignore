@@ -110,3 +110,5 @@ venv.bak/
 # outputs
 tsne.png
 embeddings.bin
+
+dde/
