@@ -59,7 +59,7 @@ def create_everything(seed, cbow_flag, env_name):
 
     OPT = torch.optim.Adam(Q.parameters(), lr=LEARNING_RATE)
     
-    embed_model = StateActionPredictionModel(OBS_N, ACT_N) if cbow_flag else SkipGramActionPredictionModel(OBS_N, ACT_N)
+    embed_model = StateActionPredictionModel(OBS_N, ACT_N, DEVICE) if cbow_flag else SkipGramActionPredictionModel(OBS_N, ACT_N, DEVICE)
     return env, test_env, buf, Q, Qt, OPT, embed_model
 
 def update(target, source):
