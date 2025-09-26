@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Simulate the loading of CBOW and SkipGram rewards for the example (since I cannot access files)
+# Load CBOW and SkipGram rewards
 reward_cbow = np.load("Results/reward_cbow.npy")
 reward_skipgram = np.load("Results/reward_skipgram.npy")
 reward_dqn = np.load("Results/reward_dqn.npy")

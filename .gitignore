@@ -112,3 +112,7 @@ tsne.png
 embeddings.bin
 
 dde/
+
+results/
+results_old/
+logs/
