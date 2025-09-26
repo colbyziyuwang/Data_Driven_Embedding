@@ -1,142 +1,178 @@
-import numpy as np
+import argparse
 import gym
+import numpy as np
+import torch
+import tqdm
 import matplotlib.pyplot as plt
 import os
-import argparse
-from collections import defaultdict
 
-SEEDS = [0, 1, 2, 3, 4]
-EPISODES = 200
+from torch.utils.data import DataLoader
+from embedding_cbow import StateActionPredictionModel
+from embedding_skipgram import SkipGramActionPredictionModel
+from load_data import StateActionDataset, SkipGramStateActionDataset
+import utils.envs, utils.seed, utils.buffers, utils.torch
 
-class Agent:
-    def __init__(self, n_states, n_actions, cbow=False, use_belief=False):
-        self.n_states = n_states
-        self.n_actions = n_actions
-        self.Q = np.zeros((n_states, n_actions))
-        self.visit_counts = np.ones((n_states, n_actions))
-        self.use_belief = use_belief
-        self.cbow = cbow
-        self.embedding = self._init_embedding()
+# Global config
+SEEDS = [1, 2, 3, 4, 5]
+t = utils.torch.TorchHelper()
+DEVICE = t.device
 
-    def _init_embedding(self):
-        d = 16  # Embedding dimension
-        embedding = {
-            's': np.random.randn(self.n_states, d),
-            'a': np.random.randn(self.n_actions, d)
-        }
-        return embedding
+# Hyperparameters
+OBS_N = 4
+ACT_N = 2
+MINIBATCH_SIZE = 10
+GAMMA = 0.99
+LEARNING_RATE = 5e-4
+TRAIN_AFTER_EPISODES = 10
+TRAIN_EPOCHS = 5
+BUFSIZE = 10000
+EPISODES = 300
+TEST_EPISODES = 1
+HIDDEN = 512
+TARGET_UPDATE_FREQ = 10
+STARTING_EPSILON = 1.0
+STEPS_MAX = 10000
+EPSILON_END = 0.01
 
-    def act(self, state, epsilon):
-        if np.random.rand() < epsilon:
-            return np.random.choice(self.n_actions)
-        if self.use_belief:
-            return self._belief_based_action(state)
-        return np.argmax(self.Q[state])
+EPSILON = STARTING_EPSILON
+Q = None
 
-    def _belief_based_action(self, state):
-        state_vec = self.embedding['s'][state]
-        scores = np.zeros(self.n_actions)
-        for a in range(self.n_actions):
-            action_vec = self.embedding['a'][a]
-            dist = np.linalg.norm(state_vec - action_vec)
-            scores[a] = -dist  # Lower distance → higher score
-        return np.argmax(scores)
-
-    def update(self, s, a, r, s_next, alpha=0.1, gamma=0.99):
-        td_target = r + gamma * np.max(self.Q[s_next])
-        td_error = td_target - self.Q[s, a]
-        self.Q[s, a] += alpha * td_error
-        self.visit_counts[s, a] += 1
-
-        if self.use_belief:
-            self._update_embeddings(s, a)
-
-    def _update_embeddings(self, s, a):
-        d = self.embedding['s'].shape[1]
-        s_vec = self.embedding['s'][s]
-        a_vec = self.embedding['a'][a]
-
-        # Gradient-like update to bring s and a closer
-        delta = s_vec - a_vec
-        self.embedding['s'][s] -= 0.01 * delta
-        self.embedding['a'][a] += 0.01 * delta
-
-
-def train(seed, cbow_flag=False, use_belief=False):
-    env = gym.make("CartPole-v0")
+def create_everything(seed, cbow_flag, env_name):
+    utils.seed.seed(seed)
+    env = gym.make(env_name)
     env.reset(seed=seed)
-    np.random.seed(seed)
+    test_env = gym.make(env_name)
+    test_env.reset(seed=10 + seed)
 
-    n_states = env.observation_space.shape[0]
-    n_actions = env.action_space.n
-    agent = Agent(n_states=500, n_actions=n_actions, cbow=cbow_flag, use_belief=use_belief)
+    buf = utils.buffers.ReplayBuffer(BUFSIZE)
+    Q = torch.nn.Sequential(
+        torch.nn.Linear(OBS_N, HIDDEN), torch.nn.ReLU(),
+        torch.nn.Linear(HIDDEN, HIDDEN), torch.nn.ReLU(),
+        torch.nn.Linear(HIDDEN, ACT_N)
+    ).to(DEVICE)
 
-    rewards = []
-    for ep in range(EPISODES):
-        s, _ = env.reset()
-        s = hash(tuple(s)) % 500
-        done = False
-        total_reward = 0
-        epsilon = max(0.1, 1 - ep / 150)
+    Qt = torch.nn.Sequential(
+        torch.nn.Linear(OBS_N, HIDDEN), torch.nn.ReLU(),
+        torch.nn.Linear(HIDDEN, HIDDEN), torch.nn.ReLU(),
+        torch.nn.Linear(HIDDEN, ACT_N)
+    ).to(DEVICE)
 
-        while not done:
-            a = agent.act(s, epsilon)
-            s_next, r, term, trunc, _ = env.step(a)
-            done = term or trunc
-            s_next = hash(tuple(s_next)) % 500
-            agent.update(s, a, r, s_next)
-            s = s_next
-            total_reward += r
+    OPT = torch.optim.Adam(Q.parameters(), lr=LEARNING_RATE)
+    
+    embed_model = StateActionPredictionModel(OBS_N, ACT_N) if cbow_flag else SkipGramActionPredictionModel(OBS_N, ACT_N)
+    return env, test_env, buf, Q, Qt, OPT, embed_model
 
-        rewards.append(total_reward)
+def update(target, source):
+    for tp, p in zip(target.parameters(), source.parameters()):
+        tp.data.copy_(p.data)
+
+def policy(obs):
+    global EPSILON, Q
+    obs = t.f(obs[0] if isinstance(obs, tuple) else obs).view(-1, OBS_N)
+    if np.random.rand() < EPSILON:
+        action = np.random.randint(ACT_N)
+    else:
+        action = torch.argmax(Q(obs)).item()
+    EPSILON = max(EPSILON_END, EPSILON - (1.0 / STEPS_MAX))
+    return action
+
+def update_networks(epi, buf, Q, Qt, OPT, embed_model, use_belief):
+    S, A, R, S2, D = buf.sample(MINIBATCH_SIZE, t)
+    qvalues = Q(S).gather(1, A.view(-1, 1)).squeeze()
+    q2values_all = Qt(S2)
+
+    if use_belief:
+        weights = embed_model.compute_distance(S2)
+        q2values = torch.sum(weights * q2values_all, dim=1)
+    else:
+        q2values = torch.max(q2values_all, dim=1).values
+
+    targets = R + GAMMA * q2values * (1 - D)
+    loss = torch.nn.MSELoss()(targets.detach(), qvalues)
+
+    OPT.zero_grad()
+    loss.backward()
+    OPT.step()
+
+    if epi % TARGET_UPDATE_FREQ == 0:
+        update(Qt, Q)
+    return loss.item()
+
+def create_batch_data(state_action_sequences, cbow):
+    data = []
+    if cbow:
+        for seq in state_action_sequences:
+            for i in range(0, len(seq) - 6, 2):
+                data.append((seq[i], seq[i+1], seq[i+2], seq[i+3], seq[i+4], seq[i+5]))
+        dataset = StateActionDataset(data)
+    else:
+        for seq in state_action_sequences:
+            for i in range(1, len(seq) - 2, 2):
+                data.append((seq[i], seq[i+1], seq[i+2]))
+        dataset = SkipGramStateActionDataset(data)
+    return DataLoader(dataset, batch_size=16, shuffle=True)
+
+def train(seed, cbow_flag, use_belief, env_name):
+    global EPSILON, Q
+    print(f"Training seed {seed} ({'cbow' if cbow_flag else 'skipgram' if use_belief else 'dqn'})...\n")
+    env, test_env, buf, Q, Qt, OPT, embed_model = create_everything(seed, cbow_flag, env_name)
+    EPSILON = STARTING_EPSILON
+    test_rewards = []
+    state_action_sequences = []
+    pbar = tqdm.trange(EPISODES)
+
+    for epi in pbar:
+        _, _, R, s_a_seq = utils.envs.play_episode_rb(env, policy, buf)
+        state_action_sequences.append(s_a_seq)
+
+        if epi >= TRAIN_AFTER_EPISODES:
+            for _ in range(TRAIN_EPOCHS):
+                data_loader = create_batch_data(state_action_sequences, cbow_flag)
+                embed_model.train(data_loader)
+                update_networks(epi, buf, Q, Qt, OPT, embed_model, use_belief)
+            state_action_sequences = []
+
+        test_r = [sum(utils.envs.play_episode(test_env, policy)[2]) for _ in range(TEST_EPISODES)]
+        avg_r = np.mean(test_r)
+        test_rewards.append(avg_r)
+        pbar.set_description(f"AvgR25: {np.mean(test_rewards[-25:]):.2f}")
+
     env.close()
-    return np.array(rewards)
+    return test_rewards
 
-
-def save_reward_curves(all_curves, env_name):
-    save_dir = f"results/{env_name}"
-    os.makedirs(save_dir, exist_ok=True)
-
-    colors = {"dqn": "red", "cbow": "green", "skipgram": "blue"}
+def plot_combined(curves_dict, fname):
     plt.figure()
-
-    for method, curves in all_curves.items():
-        mean = np.mean(curves, axis=0)
-        std = np.std(curves, axis=0)
+    for method, data in curves_dict.items():
+        mean = np.mean(data, axis=0)
+        std = np.std(data, axis=0)
         x = range(len(mean))
-
-        plt.plot(x, mean, label=method.upper(), color=colors[method])
-        plt.fill_between(x, np.clip(mean - std, 0, 200), np.clip(mean + std, 0, 200), alpha=0.3, color=colors[method])
-
-        # Save individual reward .npy
-        np.save(os.path.join(save_dir, f"reward_{method}.npy"), np.array(curves))
+        color = {'dqn': 'blue', 'cbow': 'green', 'skipgram': 'red'}[method]
+        plt.plot(x, mean, label=method.upper(), color=color)
+        plt.fill_between(x, np.clip(mean - std, 0, 200), np.clip(mean + std, 0, 200), alpha=0.3, color=color)
 
     plt.title("Reward Curve over Training")
     plt.xlabel("Episode")
     plt.ylabel("Reward")
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(save_dir, "reward_curves.png"))
+    plt.savefig(fname)
     plt.show()
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", type=str, default="CartPole-v0", help="Name of the Gymnasium environment")
+    parser.add_argument("--env", type=str, default="CartPole-v0", help="Gym environment name")
     args = parser.parse_args()
     env_name = args.env
 
-    methods = {
-        "dqn": {"cbow_flag": False, "use_belief": False},
-        "cbow": {"cbow_flag": True, "use_belief": True},
-        "skipgram": {"cbow_flag": False, "use_belief": True},
-    }
+    os.makedirs(f"results/{env_name}", exist_ok=True)
 
-    all_curves = {}
-    for method, flags in methods.items():
-        print(f"Training {method.upper()} on {env_name}...")
-        curves = [train(seed, flags["cbow_flag"], flags["use_belief"]) for seed in SEEDS]
-        all_curves[method] = curves
+    curves_dict = {}
 
-    save_reward_curves(all_curves, env_name)
+    for method in ["dqn", "cbow", "skipgram"]:
+        cbow_flag = method == "cbow"
+        use_belief = method in ["cbow", "skipgram"]
+        curves = [train(seed, cbow_flag, use_belief, env_name) for seed in SEEDS]
+        curves_dict[method] = np.array(curves)
+        np.save(f"results/{env_name}/{method}.npy", curves_dict[method])
 
+    plot_combined(curves_dict, f"results/{env_name}/reward_curves.png")
