@@ -1,46 +1,57 @@
-import gym
-import numpy as np
-import random
-from copy import deepcopy
-
 # Play an episode according to a given policy
 # env: environment
-# policy: function(env, state)
+# policy: function(state)
 # render: whether to render the episode or not (default - False)
-def play_episode(env, policy, render = False):
+def play_episode(env, policy, render=False):
     states, actions, rewards = [], [], []
-    states.append(env.reset())
+    
+    obs, _ = env.reset()  # ✅ Unpack (obs, info)
+    states.append(obs)
+    
     done = False
-    if render: env.render()
+    if render:
+        env.render()
+
     while not done:
-        action = policy(env, states[-1])
+        action = policy(states[-1])
         actions.append(action)
-        obs, reward, terminated, truncated, info = env.step(action)
+        
+        obs, reward, terminated, truncated, _ = env.step(action)
         done = terminated or truncated
-        if render: env.render()
+        
+        if render:
+            env.render()
+
         states.append(obs)
         rewards.append(reward)
+
     return states, actions, rewards
 
-# Play an episode according to a given policy and add 
-# to a replay buffer (also collects state_action_sequences)
+# Play an episode according to a given policy and add to a replay buffer
 # env: environment
-# policy: function(env, state)
-# state_action_sequence: collects (s1, a1, s2, a2, ... sn)
+# policy: function(state)
+# buf: replay buffer
+# returns states, actions, rewards, and state-action sequence
 def play_episode_rb(env, policy, buf):
     states, actions, rewards, state_action_sequence = [], [], [], []
-    state0 = env.reset()
-    states.append(state0)
-    state_action_sequence.append(state0)
+
+    obs, _ = env.reset()  # ✅ Unpack (obs, info)
+    states.append(obs)
+    state_action_sequence.append(obs)
+
     done = False
     while not done:
-        action = policy(env, states[-1])
+        action = policy(states[-1])
         actions.append(action)
         state_action_sequence.append(action)
-        obs, reward, terminated, truncated, info = env.step(action)
-        state_action_sequence.append(obs)
+
+        next_obs, reward, terminated, truncated, _ = env.step(action)
+        state_action_sequence.append(next_obs)
+
         done = terminated or truncated
-        buf.add(states[-1], action, reward, obs, done)
-        states.append(obs)
+        buf.add(states[-1], action, reward, next_obs, done)
+
+        states.append(next_obs)
         rewards.append(reward)
+
     return states, actions, rewards, state_action_sequence

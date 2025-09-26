@@ -1,5 +1,5 @@
 import argparse
-import gym
+import gymnasium as gym  # ← switched to Gymnasium
 import numpy as np
 import torch
 import tqdm
@@ -122,6 +122,7 @@ def train(seed, cbow_flag, use_belief, env_name):
     pbar = tqdm.trange(EPISODES)
 
     for epi in pbar:
+        # Updated for gymnasium reset() and step() return signatures
         _, _, R, s_a_seq = utils.envs.play_episode_rb(env, policy, buf)
         state_action_sequences.append(s_a_seq)
 
@@ -163,6 +164,12 @@ if __name__ == "__main__":
     parser.add_argument("--env", type=str, default="CartPole-v0", help="Gym environment name")
     args = parser.parse_args()
     env_name = args.env
+
+    env = gym.make(env_name)
+    obs_space = env.observation_space
+    act_space = env.action_space
+    OBS_N = obs_space.shape[0]
+    ACT_N = act_space.n
 
     os.makedirs(f"results/{env_name}", exist_ok=True)
 
