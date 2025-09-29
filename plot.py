@@ -2,13 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-env = "LunarLander-v3" # "CartPole-v1", "MountainCar-v0", "Acrobot-v1", "LunarLander-v3"
-path = f"results/{env}/"
-
-# Load rewards
-reward_cbow = np.load(path + "cbow.npy")
-reward_skipgram = np.load(path + "skipgram.npy")
-reward_dqn = np.load(path + "dqn.npy")
+# Environments to plot
+envs = ["CartPole-v1", "MountainCar-v0", "Acrobot-v1", "LunarLander-v3"]
 
 def smooth(data, window=25):
     smoothed = np.zeros_like(data)
@@ -18,47 +13,55 @@ def smooth(data, window=25):
             smoothed[i, t] = data[i, start:t+1].mean()
     return smoothed
 
-def plot_curves(reward_cbow, reward_skipgram, reward_dqn, window=25):
-    plt.figure(figsize=(12, 6))
-    
-    # Apply smoothing
-    reward_cbow = smooth(reward_cbow, window)
-    reward_skipgram = smooth(reward_skipgram, window)
-    reward_dqn = smooth(reward_dqn, window)
-    
-    x = np.arange(reward_cbow.shape[1])  # Assume shape: (num_seeds, num_episodes)
-    
-    def plot_with_std(mean, std, color, label):
-        lower = mean - std
-        upper = mean + std
-        plt.plot(x, mean, color=color, label=label)
-        plt.fill_between(x, lower, upper, color=color, alpha=0.3)
+def plot_all(envs, window=25):
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
 
-    # Compute mean and std across seeds
-    mean_cbow = np.mean(reward_cbow, axis=0)
-    std_cbow = np.std(reward_cbow, axis=0)
-    
-    mean_skipgram = np.mean(reward_skipgram, axis=0)
-    std_skipgram = np.std(reward_skipgram, axis=0)
-    
-    mean_dqn = np.mean(reward_dqn, axis=0)
-    std_dqn = np.std(reward_dqn, axis=0)
+    for idx, env in enumerate(envs):
+        ax = axes[idx]
+        path = f"results/{env}/"
 
-    # Plot each curve
-    plot_with_std(mean_cbow, std_cbow, 'blue', 'CBOW')
-    plot_with_std(mean_skipgram, std_skipgram, 'orange', 'SkipGram')
-    plot_with_std(mean_dqn, std_dqn, 'green', 'DQN')
+        # Load rewards
+        reward_cpae = np.load(path + "cbow.npy")       # CBOW = CPAE
+        reward_sace = np.load(path + "skipgram.npy")   # SkipGram = SACE
+        reward_dqn = np.load(path + "dqn.npy")
 
-    plt.xlabel("Episodes")
-    plt.ylabel("Average Reward (Smoothed, Window = {})".format(window))
-    plt.title(f"Reward Comparison on {env}")
-    plt.grid(True)
-    plt.legend(loc="upper left")
+        # Apply smoothing
+        reward_cpae = smooth(reward_cpae, window)
+        reward_sace = smooth(reward_sace, window)
+        reward_dqn = smooth(reward_dqn, window)
 
-    # Save and show
+        x = np.arange(reward_cpae.shape[1])
+
+        def plot_with_std(mean, std, color, label):
+            lower = mean - std
+            upper = mean + std
+            ax.plot(x, mean, color=color, label=label)
+            ax.fill_between(x, lower, upper, color=color, alpha=0.3)
+
+        # Compute mean and std across seeds
+        mean_cpae, std_cpae = np.mean(reward_cpae, axis=0), np.std(reward_cpae, axis=0)
+        mean_sace, std_sace = np.mean(reward_sace, axis=0), np.std(reward_sace, axis=0)
+        mean_dqn, std_dqn   = np.mean(reward_dqn, axis=0), np.std(reward_dqn, axis=0)
+
+        # Plot each curve
+        plot_with_std(mean_cpae, std_cpae, 'blue', 'CPAE')
+        plot_with_std(mean_sace, std_sace, 'orange', 'SACE')
+        plot_with_std(mean_dqn, std_dqn, 'green', 'DQN')
+
+        ax.set_title(env)
+        ax.set_xlabel("Episodes")
+        ax.set_ylabel(f"Reward (Smoothed, {window})")
+        ax.grid(True)
+        if idx == 0:  # show legend only once
+            ax.legend(loc="upper left")
+
+    plt.suptitle("Reward Comparison Across Environments", fontsize=14)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
     os.makedirs("Results", exist_ok=True)
-    plt.savefig(f"Results/reward_comparison_{env}.png")
+    plt.savefig("Results/reward_comparison_all_envs.png")
     plt.show()
 
-# Call with smoothing window
-plot_curves(reward_cbow, reward_skipgram, reward_dqn, window=15)
+# Call
+plot_all(envs, window=15)
