@@ -116,3 +116,5 @@ dde/
 results/
 results_old/
 logs/
+
+wandb/
