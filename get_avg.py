@@ -4,7 +4,8 @@ envs = ["CartPole-v1", "MountainCar-v0", "Acrobot-v1", "LunarLander-v3"]
 methods = {"dqn": "DQN", "cbow": "CPAE", "skipgram": "SACE"}
 
 # Config
-LAST_N = 20  # number of episodes to average at the end
+LAST_N = 20       # number of episodes to average at the end
+MAX_EPISODES = 200  # truncate to first 200 episodes
 
 for env in envs:
     print(f"\n--- {env} ---")
@@ -12,13 +13,16 @@ for env in envs:
         data = np.load(f"results/{env}/{method_key}.npy")  
         # data shape: (num_seeds, num_episodes)
 
-        # (1) Final episode only
+        # Truncate to first MAX_EPISODES
+        data = data[:, :MAX_EPISODES]
+
+        # (1) Final episode only (episode 200)
         final_rewards = data[:, -1]
 
-        # (2) Last-N average
+        # (2) Last-N average (last N of the truncated segment)
         lastN_rewards = data[:, -LAST_N:].mean(axis=1)
 
-        # (3) Mean across all episodes (AUC style)
+        # (3) Mean across all episodes (AUC style, first 200 only)
         mean_rewards = data.mean(axis=1)
 
         # Print nicely

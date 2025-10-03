@@ -13,7 +13,7 @@ def smooth(data, window=25):
             smoothed[i, t] = data[i, start:t+1].mean()
     return smoothed
 
-def plot_all(envs, window=25):
+def plot_all(envs, window=25, max_episodes=200):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     axes = axes.flatten()
 
@@ -24,14 +24,14 @@ def plot_all(envs, window=25):
         # Load rewards
         reward_cpae = np.load(path + "cbow.npy")       # CBOW = CPAE
         reward_sace = np.load(path + "skipgram.npy")   # SkipGram = SACE
-        reward_dqn = np.load(path + "dqn.npy")
+        reward_dqn  = np.load(path + "dqn.npy")
 
-        # Apply smoothing
-        reward_cpae = smooth(reward_cpae, window)
-        reward_sace = smooth(reward_sace, window)
-        reward_dqn = smooth(reward_dqn, window)
+        # Apply smoothing and retain only first max_episodes
+        reward_cpae = smooth(reward_cpae, window)[:, :max_episodes]
+        reward_sace = smooth(reward_sace, window)[:, :max_episodes]
+        reward_dqn  = smooth(reward_dqn,  window)[:, :max_episodes]
 
-        x = np.arange(reward_cpae.shape[1])
+        x = np.arange(reward_cpae.shape[1])  # now length = max_episodes
 
         def plot_with_std(mean, std, color, label):
             lower = mean - std
@@ -42,17 +42,18 @@ def plot_all(envs, window=25):
         # Compute mean and std across seeds
         mean_cpae, std_cpae = np.mean(reward_cpae, axis=0), np.std(reward_cpae, axis=0)
         mean_sace, std_sace = np.mean(reward_sace, axis=0), np.std(reward_sace, axis=0)
-        mean_dqn, std_dqn   = np.mean(reward_dqn, axis=0), np.std(reward_dqn, axis=0)
+        mean_dqn,  std_dqn  = np.mean(reward_dqn,  axis=0), np.std(reward_dqn,  axis=0)
 
         # Plot each curve
         plot_with_std(mean_cpae, std_cpae, 'blue', 'CPAE')
         plot_with_std(mean_sace, std_sace, 'orange', 'SACE')
-        plot_with_std(mean_dqn, std_dqn, 'green', 'DQN')
+        plot_with_std(mean_dqn,  std_dqn,  'green', 'DQN')
 
         ax.set_title(env)
         ax.set_xlabel("Episodes")
         ax.set_ylabel(f"Reward (Smoothed, {window})")
         ax.grid(True)
+        ax.set_xlim([0, max_episodes])   # limit x-axis to 200
         if idx == 0:  # show legend only once
             ax.legend(loc="upper left")
 
@@ -64,4 +65,4 @@ def plot_all(envs, window=25):
     plt.show()
 
 # Call
-plot_all(envs, window=15)
+plot_all(envs, window=15, max_episodes=200)
