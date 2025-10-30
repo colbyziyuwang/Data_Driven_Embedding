@@ -118,3 +118,7 @@ results_old/
 logs/
 
 wandb/
+
+# TensorBoard logs
+runs/
+events.out.tfevents*
