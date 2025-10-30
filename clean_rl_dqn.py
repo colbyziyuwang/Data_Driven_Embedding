@@ -15,7 +15,7 @@ import tyro
 from torch.utils.tensorboard import SummaryWriter
 
 from cleanrl_utils.buffers import ReplayBuffer
-
+from cleanrl_utils.evals.dqn_eval import evaluate
 
 @dataclass
 class Args:
@@ -159,6 +159,9 @@ if __name__ == "__main__":
     )
     start_time = time.time()
 
+    eval_returns = []  # to store the average reward over time
+    eval_interval = 5000  # evaluate every 5k environment steps
+
     # TRY NOT TO MODIFY: start the game
     obs, _ = envs.reset(seed=args.seed)
     for global_step in range(args.total_timesteps):
@@ -183,9 +186,13 @@ if __name__ == "__main__":
 
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
         real_next_obs = next_obs.copy()
-        for idx, trunc in enumerate(truncations):
-            if trunc:
-                real_next_obs[idx] = infos["final_observation"][idx]
+        final_obs = infos.get("final_observation", None)
+
+        if final_obs is not None:
+            for idx, trunc in enumerate(truncations):
+                if trunc and final_obs[idx] is not None:
+                    real_next_obs[idx] = final_obs[idx]
+
         rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
@@ -204,7 +211,7 @@ if __name__ == "__main__":
                 if global_step % 100 == 0:
                     writer.add_scalar("losses/td_loss", loss, global_step)
                     writer.add_scalar("losses/q_values", old_val.mean().item(), global_step)
-                    print("SPS:", int(global_step / (time.time() - start_time)))
+                    # print("SPS:", int(global_step / (time.time() - start_time)))
                     writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
                 # optimize the model
@@ -218,25 +225,46 @@ if __name__ == "__main__":
                     target_network_param.data.copy_(
                         args.tau * q_network_param.data + (1.0 - args.tau) * target_network_param.data
                     )
+            
+            if global_step % eval_interval == 0 and global_step > args.learning_starts:
+                returns = evaluate(
+                    model_path=None,  # directly use q_network without saving
+                    make_env=make_env,
+                    env_id=args.env_id,
+                    eval_episodes=5,
+                    run_name=f"{args.env_id}_eval_{global_step}",
+                    Model=QNetwork,
+                    device=device,
+                    epsilon=args.end_e,
+                    capture_video=False,
+                    model_instance=q_network  # <-- we’ll add this parameter
+                )
+                avg_return = np.mean(returns)
+                eval_returns.append(avg_return)
+                # writer.add_scalar("eval/avg_return", avg_return, global_step)
 
-    if args.save_model:
-        model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-        torch.save(q_network.state_dict(), model_path)
-        print(f"model saved to {model_path}")
-        from cleanrl_utils.evals.dqn_eval import evaluate
+    # if args.save_model:
+    #     model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+    #     torch.save(q_network.state_dict(), model_path)
+    #     print(f"model saved to {model_path}")
+    #     from cleanrl_utils.evals.dqn_eval import evaluate
 
-        episodic_returns = evaluate(
-            model_path,
-            make_env,
-            args.env_id,
-            eval_episodes=10,
-            run_name=f"{run_name}-eval",
-            Model=QNetwork,
-            device=device,
-            epsilon=args.end_e,
-        )
-        for idx, episodic_return in enumerate(episodic_returns):
-            writer.add_scalar("eval/episodic_return", episodic_return, idx)
+    #     episodic_returns = evaluate(
+    #         model_path,
+    #         make_env,
+    #         args.env_id,
+    #         eval_episodes=10,
+    #         run_name=f"{run_name}-eval",
+    #         Model=QNetwork,
+    #         device=device,
+    #         epsilon=args.end_e,
+    #     )
+    #     for idx, episodic_return in enumerate(episodic_returns):
+    #         writer.add_scalar("eval/episodic_return", episodic_return, idx)
 
     envs.close()
     writer.close()
+
+    save_dir = f"results_cleanrl/{args.env_id}"
+    os.makedirs(save_dir, exist_ok=True)
+    np.save(f"{save_dir}/eval_returns_seed{args.seed}.npy", np.array(eval_returns))

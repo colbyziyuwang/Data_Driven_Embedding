@@ -122,3 +122,5 @@ wandb/
 # TensorBoard logs
 runs/
 events.out.tfevents*
+
+results_cleanrl
