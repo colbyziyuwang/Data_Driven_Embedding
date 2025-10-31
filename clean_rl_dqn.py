@@ -17,6 +17,11 @@ from torch.utils.tensorboard import SummaryWriter
 from cleanrl_utils.buffers import ReplayBuffer
 from cleanrl_utils.evals.dqn_eval import evaluate
 
+from embedding_cbow import StateActionPredictionModel
+from embedding_skipgram import SkipGramActionPredictionModel
+from torch.utils.data import DataLoader, TensorDataset
+from load_data import StateActionDataset, SkipGramStateActionDataset
+
 @dataclass
 class Args:
     exp_name: str = os.path.basename(__file__)[: -len(".py")]
@@ -72,6 +77,22 @@ class Args:
     train_frequency: int = 10
     """the frequency of training"""
 
+    algo_name: str = "DQN"
+    """the name of the algorithm (DQN, CBOW, SkipGram)"""
+
+def create_batch_data(state_action_sequences, cbow):
+    data = []
+    if cbow:
+        for seq in state_action_sequences:
+            for i in range(0, len(seq) - 6, 2):
+                data.append((seq[i], seq[i+1], seq[i+2], seq[i+3], seq[i+4], seq[i+5]))
+        dataset = StateActionDataset(data)
+    else:
+        for seq in state_action_sequences:
+            for i in range(1, len(seq) - 2, 2):
+                data.append((seq[i], seq[i+1], seq[i+2]))
+        dataset = SkipGramStateActionDataset(data)
+    return DataLoader(dataset, batch_size=16, shuffle=True)
 
 def make_env(env_id, seed, idx, capture_video, run_name):
     def thunk():
@@ -112,7 +133,7 @@ def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
 if __name__ == "__main__":
     args = tyro.cli(Args)
     assert args.num_envs == 1, "vectorized envs are not supported at the moment"
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"{args.env_id}__{args.algo_name}__seed{args.seed}__{int(time.time())}"
     if args.track:
         import wandb
 
@@ -150,6 +171,20 @@ if __name__ == "__main__":
     target_network = QNetwork(envs).to(device)
     target_network.load_state_dict(q_network.state_dict())
 
+    # Set up CBOW and SkipGram Networks if needed
+    obs_space = envs.single_observation_space
+    act_space = envs.single_action_space
+    obs_dim = obs_space.shape[0]
+    act_dim = act_space.n
+
+    embed_model = None
+    if args.algo_name == "CBOW":
+        embed_model = StateActionPredictionModel(obs_dim, act_dim, device)
+    elif args.algo_name == "SkipGram":
+        embed_model = SkipGramActionPredictionModel(obs_dim, act_dim, device)
+
+    state_action_sequences = []
+
     rb = ReplayBuffer(
         args.buffer_size,
         envs.single_observation_space,
@@ -175,6 +210,11 @@ if __name__ == "__main__":
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
+
+        for env_idx in range(envs.num_envs):
+            seq = [obs[env_idx], actions[env_idx], next_obs[env_idx]]
+            state_action_sequences.append(seq)
+        state_action_sequences.append(seq)
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if "final_info" in infos:
@@ -202,8 +242,21 @@ if __name__ == "__main__":
         if global_step > args.learning_starts:
             if global_step % args.train_frequency == 0:
                 data = rb.sample(args.batch_size)
+
+                # Update CBOW and Skipgram models if needed
+                if embed_model is not None:
+                    data_loader = create_batch_data(state_action_sequences, args.algo_name == "CBOW")
+                    embed_model.train(data_loader)
+
                 with torch.no_grad():
-                    target_max, _ = target_network(data.next_observations).max(dim=1)
+                    target_max = None
+                    if (args.algo_name == "DQN"):
+                        target_max, _ = target_network(data.next_observations).max(dim=1)
+                    elif (args.algo_name in ["CBOW", "SkipGram"]):
+                        weights = embed_model.compute_distance(data.next_observations)
+                        q2values_all = target_network(data.next_observations)
+                        target_max = torch.sum(weights * q2values_all, dim=1)
+
                     td_target = data.rewards.flatten() + args.gamma * target_max * (1 - data.dones.flatten())
                 old_val = q_network(data.observations).gather(1, data.actions).squeeze()
                 loss = F.mse_loss(td_target, old_val)
@@ -243,28 +296,9 @@ if __name__ == "__main__":
                 eval_returns.append(avg_return)
                 # writer.add_scalar("eval/avg_return", avg_return, global_step)
 
-    # if args.save_model:
-    #     model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-    #     torch.save(q_network.state_dict(), model_path)
-    #     print(f"model saved to {model_path}")
-    #     from cleanrl_utils.evals.dqn_eval import evaluate
-
-    #     episodic_returns = evaluate(
-    #         model_path,
-    #         make_env,
-    #         args.env_id,
-    #         eval_episodes=10,
-    #         run_name=f"{run_name}-eval",
-    #         Model=QNetwork,
-    #         device=device,
-    #         epsilon=args.end_e,
-    #     )
-    #     for idx, episodic_return in enumerate(episodic_returns):
-    #         writer.add_scalar("eval/episodic_return", episodic_return, idx)
-
     envs.close()
     writer.close()
 
-    save_dir = f"results_cleanrl/{args.env_id}"
+    save_dir = f"results_cleanrl/{args.env_id}/{args.algo_name}"
     os.makedirs(save_dir, exist_ok=True)
     np.save(f"{save_dir}/eval_returns_seed{args.seed}.npy", np.array(eval_returns))
