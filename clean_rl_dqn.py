@@ -183,6 +183,8 @@ if __name__ == "__main__":
     elif args.algo_name == "SkipGram":
         embed_model = SkipGramActionPredictionModel(obs_dim, act_dim, device)
 
+    # Prepare sequences for CBOW & SkipGram
+    current_seq = [[] for _ in range(envs.num_envs)]
     state_action_sequences = []
 
     rb = ReplayBuffer(
@@ -212,9 +214,18 @@ if __name__ == "__main__":
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
 
         for env_idx in range(envs.num_envs):
-            seq = [obs[env_idx], actions[env_idx], next_obs[env_idx]]
-            state_action_sequences.append(seq)
-        state_action_sequences.append(seq)
+            # Extend ongoing sequence
+            current_seq[env_idx].extend([
+                obs[env_idx],
+                actions[env_idx],
+                next_obs[env_idx],
+            ])
+
+            # If episode ends → finalize sequence
+            if terminations[env_idx] or truncations[env_idx]:
+                if len(current_seq[env_idx]) > 7:   # must have at least s,a,s,a,s,a,s
+                    state_action_sequences.append(current_seq[env_idx][:])  # save a copy
+                current_seq[env_idx] = []  # reset for next episode
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if "final_info" in infos:
@@ -246,7 +257,8 @@ if __name__ == "__main__":
                 # Update CBOW and Skipgram models if needed
                 if embed_model is not None:
                     data_loader = create_batch_data(state_action_sequences, args.algo_name == "CBOW")
-                    embed_model.train(data_loader)
+                    if len(data_loader.dataset) > 0:
+                        embed_model.train(data_loader)
 
                 with torch.no_grad():
                     target_max = None
