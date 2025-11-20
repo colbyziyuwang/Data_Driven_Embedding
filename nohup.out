@@ -1,0 +1,6 @@
+Running clean_rl_dqn on CartPole-v1 with algo CBOW and seed 1
+Running clean_rl_dqn on CartPole-v1 with algo CBOW and seed 2
+Running clean_rl_dqn on CartPole-v1 with algo CBOW and seed 3
+Running clean_rl_dqn on CartPole-v1 with algo CBOW and seed 4
+Running clean_rl_dqn on CartPole-v1 with algo CBOW and seed 5
+All jobs launched! Logs are saved under logs_CartPole-v1_CBOW/

@@ -218,7 +218,6 @@ if __name__ == "__main__":
             current_seq[env_idx].extend([
                 obs[env_idx],
                 actions[env_idx],
-                next_obs[env_idx],
             ])
 
             # If episode ends → finalize sequence
