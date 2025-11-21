@@ -22,6 +22,8 @@ from embedding_skipgram import SkipGramActionPredictionModel
 from torch.utils.data import DataLoader, TensorDataset
 from load_data import StateActionDataset, SkipGramStateActionDataset
 
+from tqdm import tqdm
+
 @dataclass
 class Args:
     exp_name: str = os.path.basename(__file__)[: -len(".py")]
@@ -79,6 +81,9 @@ class Args:
 
     algo_name: str = "DQN"
     """the name of the algorithm (DQN, CBOW, SkipGram)"""
+
+EMBED_TRAIN_FREQ = 5000
+MAX_SEQS = 200
 
 def create_batch_data(state_action_sequences, cbow):
     data = []
@@ -201,7 +206,7 @@ if __name__ == "__main__":
 
     # TRY NOT TO MODIFY: start the game
     obs, _ = envs.reset(seed=args.seed)
-    for global_step in range(args.total_timesteps):
+    for global_step in tqdm(range(args.total_timesteps), desc="training progress"):
         # ALGO LOGIC: put action logic here
         epsilon = linear_schedule(args.start_e, args.end_e, args.exploration_fraction * args.total_timesteps, global_step)
         if random.random() < epsilon:
@@ -224,6 +229,8 @@ if __name__ == "__main__":
             if terminations[env_idx] or truncations[env_idx]:
                 if len(current_seq[env_idx]) > 7:   # must have at least s,a,s,a,s,a,s
                     state_action_sequences.append(current_seq[env_idx][:])  # save a copy
+                    if len(state_action_sequences) > MAX_SEQS:
+                        state_action_sequences.pop(0)  # drop oldest
                 current_seq[env_idx] = []  # reset for next episode
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
@@ -254,10 +261,11 @@ if __name__ == "__main__":
                 data = rb.sample(args.batch_size)
 
                 # Update CBOW and Skipgram models if needed
-                if embed_model is not None:
+                if embed_model is not None and global_step % EMBED_TRAIN_FREQ == 0:
                     data_loader = create_batch_data(state_action_sequences, args.algo_name == "CBOW")
                     if len(data_loader.dataset) > 0:
                         embed_model.train(data_loader)
+                    state_action_sequences.clear()
 
                 with torch.no_grad():
                     target_max = None
